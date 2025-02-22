@@ -128,7 +128,13 @@ void Physics_SimulateEntity_CustomLoop(CBaseEntity **ppList, int Count, float St
 	}
 
 	// Shuffle players array
-	apPlayers.Shuffle();
+	for(int i = iPlayers - 1; i > 0; i--)
+	{
+		int j = rand() % (i + 1);
+		CBaseEntity *pTmp = apPlayers[j];
+		apPlayers[j] = apPlayers[i];
+		apPlayers[i] = pTmp;
+	}
 
 	// Simulate players first
 	FOR_EACH_VEC(apPlayers, i)
