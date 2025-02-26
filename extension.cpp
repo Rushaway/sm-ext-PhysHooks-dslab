@@ -189,10 +189,21 @@ void TriggerMoved(edict_t *pTriggerEnt, bool testSurroundingBoundsOnly)
 	RETURN_META(MRES_IGNORED);
 }
 
+inline bool IsStaticProp_InLine(IHandleEntity *pHandleEntity)
+{
+	return (!pHandleEntity) || ( (pHandleEntity->GetRefEHandle().GetSerialNumber() == (0x80000000 >> NUM_ENT_ENTRY_BITS) ) != 0 );
+}
+
 // IterationRetval_t CTriggerMoved::EnumElement( IHandleEntity *pHandleEntity ) = 0;
 SH_DECL_HOOK1(CTriggerMoved, EnumElement, SH_NOATTRIB, 0, IterationRetval_t, IHandleEntity *);
 IterationRetval_t TriggerMoved_EnumElement(IHandleEntity *pHandleEntity)
 {
+	// skip null handle entity or static props.
+	if (!pHandleEntity || IsStaticProp_InLine(pHandleEntity))
+	{
+		RETURN_META_VALUE(MRES_SUPERCEDE, ITERATION_CONTINUE);
+	}
+
 	if(!g_pBlockTriggerTouchPlayers)
 	{
 		RETURN_META_VALUE(MRES_IGNORED, ITERATION_CONTINUE);
@@ -258,20 +269,15 @@ void SolidMoved(edict_t *pSolidEnt, ICollideable *pSolidCollide, const Vector *p
 	RETURN_META(MRES_IGNORED);
 }
 
-inline bool IsStaticProp_InLine( IHandleEntity *pHandleEntity ) const
-{
-    return (!pHandleEntity) || ( (pHandleEntity->GetRefEHandle().GetSerialNumber() == (0x80000000 >> NUM_ENT_ENTRY_BITS) ) != 0 );
-}
-
 // IterationRetval_t CTouchLinks::EnumElement( IHandleEntity *pHandleEntity ) = 0;
 SH_DECL_HOOK1(CTouchLinks, EnumElement, SH_NOATTRIB, 0, IterationRetval_t, IHandleEntity *);
 IterationRetval_t TouchLinks_EnumElement(IHandleEntity *pHandleEntity)
 {
-    // skip null handle entity or static props.
-    if (!pHandleEntity || IsStaticProp_InLine(pHandleEntity))
-    {
-        RETURN_META_VALUE(MRES_SUPERCEDE, ITERATION_CONTINUE);
-    }
+	// skip null handle entity or static props.
+	if (!pHandleEntity || IsStaticProp_InLine(pHandleEntity))
+	{
+		RETURN_META_VALUE(MRES_SUPERCEDE, ITERATION_CONTINUE);
+	}
 
 	IServerUnknown *pUnk = static_cast< IServerUnknown* >( pHandleEntity );
 	CBaseHandle hndl = pUnk->GetRefEHandle();
@@ -346,6 +352,13 @@ bool PhysHooks::SDK_OnLoad(char *error, size_t maxlength, bool late)
 
 	CDetourManager::Init(g_pSM->GetScriptingEngine(), g_pGameConf);
 
+	// Initialize before detour Physics_RunThinkFunctions.
+	g_pOnRunThinkFunctions = forwards->CreateForward("OnRunThinkFunctions", ET_Ignore, 1, NULL, Param_Cell);
+	g_pOnPrePlayerThinkFunctions = forwards->CreateForward("OnPrePlayerThinkFunctions", ET_Ignore, 0, NULL);
+	g_pOnPostPlayerThinkFunctions = forwards->CreateForward("OnPostPlayerThinkFunctions", ET_Ignore, 0, NULL);
+	g_pOnRunThinkFunctionsPost = forwards->CreateForward("OnRunThinkFunctionsPost", ET_Ignore, 1, NULL, Param_Cell);
+
+	// Physics_RunThinkFunctions
 	g_pDetour_RunThinkFunctions = DETOUR_CREATE_STATIC(DETOUR_RunThinkFunctions, "Physics_RunThinkFunctions");
 	if(g_pDetour_RunThinkFunctions == NULL)
 	{
@@ -353,9 +366,9 @@ bool PhysHooks::SDK_OnLoad(char *error, size_t maxlength, bool late)
 		SDK_OnUnload();
 		return false;
 	}
-
 	g_pDetour_RunThinkFunctions->EnableDetour();
 
+	// SimThink_ListCopy
 	g_pDetour_SimThink_ListCopy = DETOUR_CREATE_STATIC(DETOUR_SimThink_ListCopy, "SimThink_ListCopy");
 	if (g_pDetour_SimThink_ListCopy == NULL)
 	{
@@ -363,7 +376,6 @@ bool PhysHooks::SDK_OnLoad(char *error, size_t maxlength, bool late)
 		SDK_OnUnload();
 		return false;
 	}
-
 	g_pDetour_SimThink_ListCopy->EnableDetour();
 
 	// Find VTable for CTriggerMoved
@@ -400,11 +412,6 @@ bool PhysHooks::SDK_OnLoad(char *error, size_t maxlength, bool late)
 		SDK_OnUnload();
 		return false;
 	}
-
-	g_pOnRunThinkFunctions = forwards->CreateForward("OnRunThinkFunctions", ET_Ignore, 1, NULL, Param_Cell);
-	g_pOnPrePlayerThinkFunctions = forwards->CreateForward("OnPrePlayerThinkFunctions", ET_Ignore, 0, NULL);
-	g_pOnPostPlayerThinkFunctions = forwards->CreateForward("OnPostPlayerThinkFunctions", ET_Ignore, 0, NULL);
-	g_pOnRunThinkFunctionsPost = forwards->CreateForward("OnRunThinkFunctionsPost", ET_Ignore, 1, NULL, Param_Cell);
 
 	return true;
 }
